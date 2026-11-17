@@ -1,0 +1,15 @@
+# Files that are NOT copied into the container image
+node_modules
+npm-debug.log
+.env
+.env.*
+.git
+.gitignore
+.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml
+test
+deploy
+ecosystem.config.cjs
+*.md

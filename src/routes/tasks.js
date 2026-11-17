@@ -20,7 +20,7 @@ async function findTask(id) {
 // GET /api/tasks            -> all tasks
 // GET /api/tasks?status=done -> only tasks with that status
 router.get('/', async (req, res) => {
-  const { status } = req.query;
+  const status = req.query.status || undefined; // "?status=" means all tasks
   if (status !== undefined && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
   }

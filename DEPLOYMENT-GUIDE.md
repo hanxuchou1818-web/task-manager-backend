@@ -69,6 +69,9 @@ cloud database.
 | **sslip.io** | A free DNS service | `13-250-1-2.sslip.io` points to IP `13.250.1.2`, so you get a hostname without buying a domain |
 | **Let's Encrypt** | A free certificate authority | Gives your hostname a real HTTPS certificate |
 
+> **Note:** the app has no login. Anyone who knows your URL can add or delete tasks. That's fine
+> for this lab, but never put real or personal data in it.
+
 > **Why do we need HTTPS on the backend?**
 > Amplify serves your website over `https://`. Browsers **block** an HTTPS page from calling an
 > `http://` API (this is called *mixed content*). So the API must also use HTTPS.
@@ -87,13 +90,19 @@ cloud database.
 ### You need
 - An **AWS account** (a new account on the Free plan comes with credits that cover this lab)
 - A **GitHub account**
-- **Git** and **Node.js 20.19+ or 22.12+** on your computer ([nodejs.org](https://nodejs.org), choose LTS)
+- **Git** and **Node.js 22 or 24** (LTS) on your computer ([nodejs.org](https://nodejs.org))
 - A terminal: Terminal (Mac/Linux) or PowerShell (Windows)
 
 ### Pick ONE AWS region and stay in it
 In the top-right corner of the AWS console, choose a region, for example
 **Asia Pacific (Singapore) `ap-southeast-1`**. Create **everything** in this lab in the same region.
 EC2 and RDS must be in the same region (and the same VPC) to talk to each other.
+
+> **Sharing one AWS account with classmates?** Names must be unique inside one account, so add
+> your name to everything you create (e.g. `ali-task-api-sg`, `ali-task-db`, `ali-task-key`).
+> A shared account also has limits (by default only 5 Elastic IPs per region), so your instructor
+> may need to request a quota increase, and the credits run out much faster. At clean-up time,
+> delete **only your own** resources. With your own account you can use the names as written.
 
 ### About cost
 - Choose options marked **Free tier eligible** (EC2 `t3.micro`, RDS `db.t4g.micro` or `db.t3.micro`).
@@ -126,6 +135,7 @@ your computer. Either install MySQL Community Server, or if you have Docker:
 ```bash
 docker run --name taskdb -e MYSQL_ROOT_PASSWORD=secret -p 3306:3306 -d mysql:8.4
 ```
+MySQL needs about 30 seconds to start the first time. Wait before running `npm run db:init`.
 
 **Backend** (terminal 1):
 ```bash
@@ -155,9 +165,19 @@ Open <http://localhost:5173>. The green bar at the top should say **API ✓ Data
 
 Amplify deploys from GitHub, and the EC2 server will `git clone` the backend from GitHub.
 
-1. On GitHub, create two **empty, public** repositories (no README, no .gitignore):
+1. **First time using Git on this computer?** Tell Git who you are (use your GitHub email):
+   ```bash
+   git config --global user.name "Your Name"
+   git config --global user.email "you@example.com"
+   ```
+2. On GitHub, create two **empty, public** repositories (no README, no .gitignore):
    `task-manager-backend` and `task-manager-frontend`.
-2. Push each folder (replace `YOUR-USERNAME`):
+3. Push each folder (replace `YOUR-USERNAME`):
+
+> **Login on `git push`:** GitHub does not accept your account password here. On Windows, Git
+> opens a browser window to sign in. On Mac, if it asks for a password, either install the GitHub
+> CLI and run `gh auth login`, or create a *personal access token* (GitHub → Settings → Developer
+> settings) and paste it as the password.
 
 ```bash
 cd task-manager-backend
@@ -295,6 +315,9 @@ Type `yes` when asked about the fingerprint.
 > **Connect** opens a terminal in your browser. For this to work, the SSH rule in `task-api-sg` must
 > allow the EC2 Instance Connect service. The simplest option for a short lab is to change the SSH
 > source to *Anywhere-IPv4* (login still requires the key).
+> (Safer: instead of *Anywhere*, choose the source `com.amazonaws.<your-region>.ec2-instance-connect`
+> from the prefix-list search box.) Use this too if `ssh` times out on campus or office Wi-Fi:
+> many networks block port 22.
 
 ✅ **Checkpoint:** your prompt looks like `ubuntu@ip-172-31-xx-xx:~$`. You're on the server.
 **From now on, every command runs on the EC2 server** unless the guide says otherwise.
@@ -379,9 +402,11 @@ npm run db:init
 ```
 Expected output:
 ```
+Connecting to MySQL at task-db.abc123xyz.ap-southeast-1.rds.amazonaws.com:3306 as admin ...
 ✅ Database "taskmanager" and table "tasks" are ready.
 ✅ Added 3 sample tasks.
 ```
+If it fails, read the `Hint:` line. It explains the most common mistakes in plain words.
 
 ### 8d. Start the API with PM2
 ```bash
@@ -421,14 +446,16 @@ Your public IP with dots replaced by dashes, plus `.sslip.io`. This command buil
 ```bash
 export API_HOST="$(curl -s https://checkip.amazonaws.com | tr . -).sslip.io"
 echo $API_HOST                 # e.g. 13-250-1-2.sslip.io (must match your Elastic IP!)
+echo "export API_HOST=$API_HOST" >> ~/.bashrc    # remember it in future SSH sessions too
 ```
 
 ### 9b. Configure Nginx as a reverse proxy
 ```bash
+echo $API_HOST                 # must NOT be empty! If it is, go back to 9a
 cd ~/task-manager-backend
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/task-api
 sudo sed -i "s/YOUR_API_HOST/$API_HOST/" /etc/nginx/sites-available/task-api
-sudo ln -s /etc/nginx/sites-available/task-api /etc/nginx/sites-enabled/task-api
+sudo ln -sf /etc/nginx/sites-available/task-api /etc/nginx/sites-enabled/task-api
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t                  # must say "syntax is ok" and "test is successful"
 sudo systemctl reload nginx
@@ -441,6 +468,7 @@ sudo systemctl reload nginx
 ### 9c. Get a free HTTPS certificate
 Back on the server (replace the email address with yours):
 ```bash
+echo $API_HOST                 # must NOT be empty
 sudo certbot --nginx -d "$API_HOST" --agree-tos -m your-email@example.com --no-eff-email --redirect
 ```
 Certbot proves to Let's Encrypt that you control the hostname (that's why port 80 must be open),
@@ -469,6 +497,8 @@ Save this **https** URL (without `/api/health`). It's your `VITE_API_URL`.
    | `VITE_API_URL` | `https://13-250-1-2.sslip.io` (your API hostname: **https**, no trailing `/`) |
 
 5. **Next** → **Save and deploy**. Wait 2–4 minutes until the build is **Deployed**.
+   If you forgot the variable, the build **fails** with *VITE_API_URL is not set*: add it under
+   **Hosting → Environment variables**, then redeploy.
 6. Click the URL, e.g. `https://main.d1a2b3c4.amplifyapp.com`, and write it in your worksheet.
 
 > **Important: Vite reads `VITE_API_URL` at BUILD time.** If you add or change the variable later
@@ -496,8 +526,8 @@ CORS_ORIGIN=https://main.d1a2b3c4.amplifyapp.com
 pm2 restart task-api
 ```
 
-✅ **Checkpoint:** refresh the Amplify site: still green. Opening `http://localhost:5173` on your
-own computer against the cloud API would now be blocked by CORS. That's what we want.
+✅ **Checkpoint:** refresh the Amplify site: still green. Browsers now refuse to let any other
+website call your API. That's what we want.
 
 ---
 
@@ -505,9 +535,9 @@ own computer against the cloud API would now be blocked by CORS. That's what we 
 
 1. On the Amplify site: add a task with a due date, change its status, filter by status, edit it, delete one.
 2. Refresh the page (F5). Your tasks are still there, so they're stored in RDS, not in the browser.
-3. Look at the data directly in the database from the EC2 server:
+3. Look at the data directly in the database from the EC2 server (use your own RDS endpoint):
    ```bash
-   mysql -h <your RDS endpoint> -u admin -p taskmanager -e "SELECT id, title, status, due_date FROM tasks;"
+   mysql -h task-db.abc123xyz.ap-southeast-1.rds.amazonaws.com -u admin -p taskmanager -e "SELECT id, title, status, due_date FROM tasks;"
    ```
 4. Reboot the server and confirm the API comes back by itself:
    ```bash
@@ -524,7 +554,9 @@ Real apps change all the time. Practice the update flow for each part:
 
 **Frontend (automatic):** on your computer, edit e.g. the subtitle in `src/App.jsx`, then
 ```bash
-git add . && git commit -m "Change subtitle" && git push
+git add .
+git commit -m "Change subtitle"
+git push
 ```
 Amplify notices the push and rebuilds automatically. Watch the build in the Amplify console.
 
@@ -543,14 +575,16 @@ pm2 restart task-api
 ## 14. Troubleshooting
 
 **Where to look first**
-- The **top bar** of the website tells you which layer is broken (API or database).
+- The **top bar** of the website tells you which layer is broken (API or database) and gives a hint.
+- On EC2: `curl http://localhost:3000/api/health` shows the database error `code` and a `hint`.
 - Browser **DevTools** (F12) → **Console** and **Network** tabs.
 - On EC2: `pm2 logs task-api` and `sudo tail -n 50 /var/log/nginx/error.log`.
 - Amplify console → your app → the build → **Build logs** (the log prints `VITE_API_URL=...`).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Amplify site: *Cannot reach the API at http://localhost:3000* | `VITE_API_URL` not set, or set after the build | Add it in **Hosting → Environment variables**, then **redeploy** |
+| Amplify build fails: *VITE_API_URL is not set* | The environment variable is missing | Add it in **Hosting → Environment variables**, then **redeploy** |
+| Site: *… is not the Task Manager API* | `VITE_API_URL` points at the wrong address (e.g. ends with `/api`) | Use just `https://<your-host>.sslip.io`, then redeploy |
 | Site shows the *mixed content* hint | `VITE_API_URL` starts with `http://` | Use the `https://` address, then redeploy |
 | DevTools console: *blocked by CORS policy* | `CORS_ORIGIN` doesn't exactly match the Amplify URL | Set it to the exact URL (https, no trailing slash) and run `pm2 restart task-api` |
 | *API ✓ Database ✗* with `ETIMEDOUT` | EC2 can't reach RDS on port 3306 | `task-db-sg` must allow 3306 from **`task-api-sg`**; RDS and EC2 must be in the same VPC/region |
@@ -558,13 +592,14 @@ pm2 restart task-api
 | `ER_BAD_DB_ERROR` | Database `taskmanager` doesn't exist | Run `npm run db:init` (it creates it), check `DB_NAME` |
 | `ER_NO_SUCH_TABLE` | Table not created yet | `npm run db:init` |
 | `ENOTFOUND` | `DB_HOST` has a typo | Copy the endpoint again from the RDS console |
-| SSL / certificate errors when connecting to the database | `DB_SSL` setting doesn't match the server | Use `DB_SSL=true` for RDS, `DB_SSL=false` for a local MySQL |
+| `HANDSHAKE_SSL_ERROR` | `DB_SSL` setting doesn't match the server | Use `DB_SSL=true` for RDS, `DB_SSL=false` for a local MySQL |
+| Site: *did not answer within 15 seconds* | Port 443 blocked, or the instance is stopped | `task-api-sg` must allow HTTPS 443 from anywhere; check the instance is *Running* |
 | `502 Bad Gateway` from Nginx | Node.js isn't running | `pm2 status`, `pm2 logs task-api`; fix the error, `pm2 restart task-api` |
 | `curl http://localhost:3000` fails, `pm2 status` shows *errored* | Crash on start, often a bad `.env` | `pm2 logs task-api --lines 50` |
 | Certbot fails: *Timeout during connect* | Port 80 isn't reachable | `task-api-sg` must allow HTTP 80 from anywhere; check that Nginx is running |
-| Certbot: *too many certificates already issued for sslip.io* | Let's Encrypt rate limit (shared by many users) | Use `nip.io` instead: `13-250-1-2.nip.io` (update Nginx `server_name` and `VITE_API_URL`) |
+| Certbot: *too many certificates already issued for sslip.io* | Let's Encrypt rate limit (shared by many users) | Use `nip.io` instead: `export API_HOST=13-250-1-2.nip.io`, update the `API_HOST` line in `~/.bashrc`, redo Steps 9b–9c, then set `VITE_API_URL` to the new https address and redeploy Amplify |
 | SSH: *Connection timed out* | Your IP changed (new Wi-Fi) | Edit the SSH rule in `task-api-sg` → Source *My IP* again |
-| SSH: *UNPROTECTED PRIVATE KEY FILE* | Key file permissions too open | `chmod 400 task-key.pem` (or use EC2 Instance Connect) |
+| SSH: *UNPROTECTED PRIVATE KEY FILE* | Key file permissions too open | Mac/Linux: `chmod 400 task-key.pem`. Windows PowerShell: `icacls .\task-key.pem /inheritance:r /grant:r "$($env:USERNAME):(R)"`. Or use EC2 Instance Connect |
 | API doesn't come back after reboot | PM2 startup not saved | Run `pm2 startup` (+ the printed command) and `pm2 save` |
 | Amplify build fails at `npm ci` | `package-lock.json` missing from GitHub | Commit and push `package-lock.json` |
 | `nginx -t` fails | Typo in the config file | `sudo nano /etc/nginx/sites-available/task-api` |

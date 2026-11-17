@@ -40,3 +40,8 @@ test('unknown routes return 404', async () => {
   const res = await request(app).get('/api/nope');
   assert.equal(res.status, 404);
 });
+
+test('GET / reports a version number', async () => {
+  const res = await request(app).get('/');
+  assert.equal(typeof res.body.version, 'number');
+});
