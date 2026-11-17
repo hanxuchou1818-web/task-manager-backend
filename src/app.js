@@ -22,7 +22,7 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
     name: 'Task Manager API',
-    version: 1,
+    version: 2,
     endpoints: ['GET /api/health', 'GET /api/tasks', 'POST /api/tasks', 'PUT /api/tasks/:id', 'DELETE /api/tasks/:id'],
   });
 });
